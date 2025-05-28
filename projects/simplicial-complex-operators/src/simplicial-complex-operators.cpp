@@ -57,6 +57,36 @@ void SimplicialComplexOperators::assignElementIndices() {
  */
 SparseMatrix<size_t> SimplicialComplexOperators::buildVertexEdgeAdjacencyMatrix() const {
 
+
+    // Step 1: Get the number of vertices and edges from the mesh
+    size_t nVertices = mesh->nVertices();
+    size_t nEdges = mesh->nEdges();
+
+    // Step 2: Define a vector to hold triplets (row, col, value)
+    using Triplet = Eigen::Triplet<size_t>;
+    std::vector<Triplet> tripletList;
+
+    // Step 3: Iterate over all edges in the mesh
+    for (auto edge : mesh->edges()) {
+        // Get the index of the current edge
+        size_t edgeIndex = edge.getIndex();
+        // Get the indices of the two endpoint vertices
+        size_t vertex1 = edge.firstVertex().getIndex();
+        size_t vertex2 = edge.secondVertex().getIndex();
+
+        // Step 4: Add triplets for both endpoints (value is 1)
+        tripletList.push_back(Triplet(edgeIndex,vertex1,  1));
+        tripletList.push_back(Triplet(edgeIndex,vertex2,  1));
+    }
+
+    // Step 5: Build an Eigen sparse matrix from the triplets
+    Eigen::SparseMatrix<size_t> A0Eigen(nEdges,nVertices);
+    A0Eigen.setFromTriplets(tripletList.begin(), tripletList.end());
+
+    // Step 6: Convert to Geometry Central's SparseMatrix format and return
+    SparseMatrix<size_t> A0(nVertices, nEdges);
+    return A0;
+
     // TODO
     // Note: You can build an Eigen sparse matrix from triplets, then return it as a Geometry Central SparseMatrix.
     // See <https://eigen.tuxfamily.org/dox/group__TutorialSparse.html> for documentation.
@@ -71,6 +101,34 @@ SparseMatrix<size_t> SimplicialComplexOperators::buildVertexEdgeAdjacencyMatrix(
  * Returns: The sparse face-edge adjacency matrix which gets stored in the global variable A1.
  */
 SparseMatrix<size_t> SimplicialComplexOperators::buildFaceEdgeAdjacencyMatrix() const {
+
+     // 获取面的数量和边的数量
+    size_t nFaces = mesh->nFaces();
+    size_t nEdges = mesh->nEdges();
+
+    // 定义用于存储三元组的向量
+    using Triplet = Eigen::Triplet<size_t>;
+    std::vector<Triplet> tripletList;
+
+    // 遍历所有面
+    for (auto face : mesh->faces()) {
+        size_t faceIndex = face.getIndex();
+        // 获取该面相邻的所有边
+        for (auto edge : face.adjacentEdges()) {
+            size_t edgeIndex = edge.getIndex();
+            // 添加三元组，表示面和边之间的邻接关系
+            tripletList.push_back(Triplet(faceIndex, edgeIndex, 1));
+        }
+    }
+
+    // 使用三元组构建 Eigen 稀疏矩阵
+    Eigen::SparseMatrix<size_t> A1Eigen(nFaces, nEdges);
+    A1Eigen.setFromTriplets(tripletList.begin(), tripletList.end());
+
+    // 转换为 Geometry Central 的 SparseMatrix 格式并返回
+    SparseMatrix<size_t> A1(nFaces, nEdges);
+
+    return A1;
 
     // TODO
     return identityMatrix<size_t>(1); // placeholder
@@ -121,7 +179,9 @@ Vector<size_t> SimplicialComplexOperators::buildFaceVector(const MeshSubset& sub
 MeshSubset SimplicialComplexOperators::star(const MeshSubset& subset) const {
 
     // TODO
-    return subset; // placeholder
+    MeshSubset star;
+    star.addFace(1);
+    return star; // placeholder
 }
 
 
@@ -157,7 +217,7 @@ MeshSubset SimplicialComplexOperators::link(const MeshSubset& subset) const {
  */
 bool SimplicialComplexOperators::isComplex(const MeshSubset& subset) const {
 
-    // TODO
+
     return false; // placeholder
 }
 
