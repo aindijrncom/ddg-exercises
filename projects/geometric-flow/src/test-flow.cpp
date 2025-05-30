@@ -175,6 +175,8 @@ TEST_F(MeanCurvatureFlowTest, integrate) {
 
     bool success = true;
     for (Vertex v : MCF.mesh->vertices()) {
+        auto compare = MCF.geometry->inputVertexPositions[v];
+        auto compare2 = mcf_soln[v.getIndex()];
         if ((MCF.geometry->inputVertexPositions[v] - mcf_soln[v.getIndex()]).norm() > 1e-6) {
             success = false;
             break;

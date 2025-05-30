@@ -214,6 +214,9 @@ TEST_F(DiscreteCurvaturesAndNormalsTest, vertexNormalGaussianCurvature) {
     bool allNormalsCorrect = true;
     for (Vertex v : mesh->vertices()) {
         // Allow defining outward or inward-pointing normals
+        auto error1 = (geometry->vertexNormalGaussianCurvature(v) - gaussCurvatureNormals[v.getIndex()]).norm();
+        auto error2 = (geometry->vertexNormalGaussianCurvature(v) - gaussCurvatureNormals[v.getIndex()]).norm();
+
         if ((geometry->vertexNormalGaussianCurvature(v) - gaussCurvatureNormals[v.getIndex()]).norm() > 1e-5 &&
             (geometry->vertexNormalGaussianCurvature(v) + gaussCurvatureNormals[v.getIndex()]).norm() > 1e-5) {
             allNormalsCorrect = false;

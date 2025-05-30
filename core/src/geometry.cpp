@@ -31,6 +31,7 @@
 
 #include "geometrycentral/surface/vertex_position_geometry.h"
 #include <complex>
+#include <geometrycentral/surface/tufted_laplacian.h>
 
 namespace geometrycentral {
 namespace surface {
@@ -327,7 +328,7 @@ Vector3 VertexPositionGeometry::vertexNormalSphereInscribed(Vertex v) const {
     Halfedge he = startHe;
     do {
         halfedges.push_back(he);
-        he = he.next().twin(); // 移动到下一个半边
+        he = he.next().next().twin(); // 移动到下一个半边
     } while (he != startHe); // 直到回到起点或遇到边界
 
     // 如果没有有效半边，返回零向量
@@ -439,83 +440,50 @@ Vector3 VertexPositionGeometry::vertexNormalGaussianCurvature(Vertex v) const {
     Vector3 zeronormal;
     zeronormal = zeronormal.zero();
 
-    // 初始化角和与混合面积
-    double angleSum = 0.0;  // 顶点周围的内角和
-    double mixedArea = 0.0; // 混合面积
+    // 获取顶点 v 周围的半边
+    std::vector<Halfedge> halfedges;
+    Halfedge startHe = v.halfedge(); // 获取顶点的第一个半边
+    Halfedge he = startHe;
+    do {
+        halfedges.push_back(he);
+        he = he.next().next().twin(); // 移动到下一个半边
+    } while (he != startHe); // 直到回到起点或遇到边界
 
-    // 遍历顶点 v 周围的所有面（三角形）
-    for (Face f : v.adjacentFaces()) {
-        // 获取三角形的三个顶点
-        std::vector<Vertex> vertices;
-        for (Vertex vert : f.adjacentVertices()) {
-            vertices.push_back(vert);
-        }
+    // 如果没有有效半边，返回零向量
+    if (halfedges.empty()) return zeronormal.zero();
 
-        // 确保是三角形（有 3 个顶点）
-        if (vertices.size() != 3) continue;
-
-        // 确定当前顶点 v 在三角形中的位置
-        int vIndex = -1;
-        for (int i = 0; i < 3; ++i) {
-            if (vertices[i] == v) {
-                vIndex = i;
-                break;
-            }
-        }
-        if (vIndex == -1) continue;
-
-        // 获取三个顶点的坐标
-        Vector3 A = inputVertexPositions[vertices[0]];
-        Vector3 B = inputVertexPositions[vertices[1]];
-        Vector3 C = inputVertexPositions[vertices[2]];
-
-        // 计算三角形的法向量
-        Vector3 AB = B - A;
-        Vector3 AC = C - A;
-        Vector3 faceNormal = cross(AB, AC);
-        double faceNormalMag = sqrt(dot(faceNormal, faceNormal));
-        if (faceNormalMag < 1e-10) continue; // 避免退化三角形
-        faceNormal = {faceNormal.x / faceNormalMag, faceNormal.y / faceNormalMag, faceNormal.z / faceNormalMag};
-
-        // 计算三角形面积
-        double area = 0.5 * faceNormalMag;
-        mixedArea += area / 3.0; // 重心对偶面积贡献
-
-        // 计算顶点 v 处的内角
-        Vector3 vPos = inputVertexPositions[v];
-        Vector3 vPrev = (vIndex == 0) ? inputVertexPositions[vertices[2]] : inputVertexPositions[vertices[vIndex - 1]];
-        Vector3 vNext = (vIndex == 2) ? inputVertexPositions[vertices[0]] : inputVertexPositions[vertices[vIndex + 1]];
-
-        // 计算边向量
-        Vector3 edgePrev = vPrev - vPos;
-        Vector3 edgeNext = vNext - vPos;
-
-        // 归一化边向量
-        double edgePrevMag = sqrt(dot(edgePrev, edgePrev));
-        double edgeNextMag = sqrt(dot(edgeNext, edgeNext));
-        if (edgePrevMag < 1e-10 || edgeNextMag < 1e-10) continue;
-        edgePrev = {edgePrev.x / edgePrevMag, edgePrev.y / edgePrevMag, edgePrev.z / edgePrevMag};
-        edgeNext = {edgeNext.x / edgeNextMag, edgeNext.y / edgeNextMag, edgeNext.z / edgeNextMag};
-
-        // 计算内角
-        double cosTheta = dot(edgePrev, edgeNext);
-        cosTheta = std::max(-1.0, std::min(1.0, cosTheta));
-        double theta = acos(cosTheta);
-        angleSum += theta;
-
-        // 加权法向量（暂时使用面积权重，后续结合高斯曲率调整）
-        zeronormal = zeronormal + faceNormal * (area / 3.0);
+    // 获取半边向量
+    std::vector<Vector3> vec;
+    for (Halfedge h : halfedges) {
+        Vertex vStart = h.vertex();
+        Vertex vEnd = h.next().vertex();
+        Vector3 startPos = inputVertexPositions[vStart];
+        Vector3 endPos = inputVertexPositions[vEnd];
+        Vector3 edgeVec = endPos - startPos; // 半边向量
+        vec.push_back(edgeVec);
     }
 
-    // 计算离散高斯曲率
-    double K = (2.0 * M_PI - angleSum) / mixedArea;
-    if (mixedArea < 1e-10) return zeronormal.zero(); // 避免除以零
+    // 计算每个半边向量的长度
+    std::vector<double> len(vec.size());
+    for (size_t i = 0; i < vec.size(); ++i) {
+        len[i] = sqrt(dot(vec[i], vec[i]));
+        if (len[i] < 1e-10) return zeronormal.zero(); // 避免除以零
+    }
 
-    // 修正法向量：高斯曲率影响权重（这里简化，直接使用面积加权结果）
+    for (size_t i = 0; i < vec.size(); ++i) 
+    {
+        auto diAngle = dihedralAngle(halfedges[i]);
+        zeronormal += diAngle * vec[i] / len[i];
+    }
+
+    zeronormal /= 2;
+
     // 归一化最终法向量
     double normalMag = sqrt(dot(zeronormal, zeronormal));
     if (normalMag < 1e-10) return zeronormal.zero(); // 避免除以零
     zeronormal = {zeronormal.x / normalMag, zeronormal.y / normalMag, zeronormal.z / normalMag};
+    return zeronormal;
+
     return {0, 0, 0}; // placeholder
 }
 
@@ -528,93 +496,50 @@ Vector3 VertexPositionGeometry::vertexNormalGaussianCurvature(Vertex v) const {
 Vector3 VertexPositionGeometry::vertexNormalMeanCurvature(Vertex v) const {
 
     // TODO
+    // 初始化法向量为零向量
+    Vector3 zeronormal =Vector3::zero();
 
-      // 初始化法向量为零向量
-    Vector3 zeronormal;
-    zeronormal = zeronormal.zero();
-
-    // 计算顶点 v 的混合面积
-    double dualArea = circumcentricDualArea(v);
-    if (dualArea < 1e-10) return zeronormal.zero(); // 避免除以零
-
-    // 遍历顶点 v 周围的半边
-    Halfedge startHe = v.halfedge();
+    // 获取顶点 v 周围的半边
+    std::vector<Halfedge> halfedges;
+    Halfedge startHe = v.halfedge(); // 获取顶点的第一个半边
     Halfedge he = startHe;
     do {
-        // 获取当前半边对应的边和顶点
-        Vertex vStart = he.vertex();
-        Vertex vEnd = he.next().vertex();
-        Vector3 xStart = inputVertexPositions[vStart];
-        Vector3 xEnd = inputVertexPositions[vEnd];
+        halfedges.push_back(he);
+        he = he.next().next().twin(); // 移动到下一个半边
+    } while (he != startHe); // 直到回到起点或遇到边界
 
-        // 计算边的向量
-        Vector3 edgeVec = xEnd - xStart;
+    // 如果没有有效半边，返回零向量
+    if (halfedges.empty()) return zeronormal.zero();
 
-        // 获取相邻面
-        Face f1 = he.face();
-        Face f2 = he.twin().face();
+    // 获取半边向量
+    std::vector<Vector3> vec;
+    for (Halfedge h : halfedges) {
+        Vertex vStart = h.vertex();
+        Vertex vEnd = h.next().vertex();
+        Vector3 startPos = inputVertexPositions[vStart];
+        Vector3 endPos = inputVertexPositions[vEnd];
+        Vector3 edgeVec = endPos - startPos; // 半边向量
+        vec.push_back(edgeVec);
+    }
 
-        // 计算与边相关的内角的余切值
-        double cotAlpha = 0.0, cotBeta = 0.0;
-        if (1) {
-            std::vector<Vertex> verticesF1;
-            for (Vertex vert : f1.adjacentVertices()) verticesF1.push_back(vert);
-            int v1Index = -1;
-            for (int i = 0; i < 3; ++i)
-                if (verticesF1[i] == v) v1Index = i;
-            Vector3 vPrevF1 =
-                (v1Index == 0) ? inputVertexPositions[verticesF1[2]] : inputVertexPositions[verticesF1[v1Index - 1]];
-            Vector3 vNextF1 =
-                (v1Index == 2) ? inputVertexPositions[verticesF1[0]] : inputVertexPositions[verticesF1[v1Index + 1]];
-            Vector3 edgePrevF1 = vPrevF1 - inputVertexPositions[v];
-            Vector3 edgeNextF1 = vNextF1 - inputVertexPositions[v];
-            double lenPrevF1 = sqrt(dot(edgePrevF1, edgePrevF1));
-            double lenNextF1 = sqrt(dot(edgeNextF1, edgeNextF1));
-            edgePrevF1 = {edgePrevF1.x / lenPrevF1, edgePrevF1.y / lenPrevF1, edgePrevF1.z / lenPrevF1};
-            edgeNextF1 = {edgeNextF1.x / lenNextF1, edgeNextF1.y / lenNextF1, edgeNextF1.z / lenNextF1};
-            double cosAlpha = dot(edgePrevF1, edgeNextF1);
-            cosAlpha = std::max(-1.0, std::min(1.0, cosAlpha));
-            double sinAlpha = sqrt(1.0 - cosAlpha * cosAlpha);
-            cotAlpha = (sinAlpha < 1e-10) ? 0.0 : cosAlpha / sinAlpha;
-        }
-        if (1) {
-            std::vector<Vertex> verticesF2;
-            for (Vertex vert : f2.adjacentVertices()) verticesF2.push_back(vert);
-            int v2Index = -1;
-            for (int i = 0; i < 3; ++i)
-                if (verticesF2[i] == v) v2Index = i;
-            Vector3 vPrevF2 =
-                (v2Index == 0) ? inputVertexPositions[verticesF2[2]] : inputVertexPositions[verticesF2[v2Index - 1]];
-            Vector3 vNextF2 =
-                (v2Index == 2) ? inputVertexPositions[verticesF2[0]] : inputVertexPositions[verticesF2[v2Index + 1]];
-            Vector3 edgePrevF2 = vPrevF2 - inputVertexPositions[v];
-            Vector3 edgeNextF2 = vNextF2 - inputVertexPositions[v];
-            double lenPrevF2 = sqrt(dot(edgePrevF2, edgePrevF2));
-            double lenNextF2 = sqrt(dot(edgeNextF2, edgeNextF2));
-            edgePrevF2 = {edgePrevF2.x / lenPrevF2, edgePrevF2.y / lenPrevF2, edgePrevF2.z / lenPrevF2};
-            edgeNextF2 = {edgeNextF2.x / lenNextF2, edgeNextF2.y / lenNextF2, edgeNextF2.z / lenNextF2};
-            double cosBeta = dot(edgePrevF2, edgeNextF2);
-            cosBeta = std::max(-1.0, std::min(1.0, cosBeta));
-            double sinBeta = sqrt(1.0 - cosBeta * cosBeta);
-            cotBeta = (sinBeta < 1e-10) ? 0.0 : cosBeta / sinBeta;
-        }
+    // 计算每个半边向量的长度
+    std::vector<double> len(vec.size());
+    for (size_t i = 0; i < vec.size(); ++i) {
+        len[i] = sqrt(dot(vec[i], vec[i]));
+        if (len[i] < 1e-10) return zeronormal.zero(); // 避免除以零
+    }
 
-        // 计算边贡献
-        double weight = (cotAlpha + cotBeta) / 2.0;
-        zeronormal = zeronormal + weight * edgeVec;
+   for (size_t i = 0; i < vec.size(); ++i) {
+        auto CotWeight = halfedgeCotanWeight(halfedges[i]) + halfedgeCotanWeight(halfedges[i].twin());
+        zeronormal += CotWeight * vec[i];
+    }
 
-        // 移动到下一个半边
-        he = he.twin().next();
-    } while (he != startHe);
+    zeronormal /= 2;
 
-    // 归一化法向量
+    // 归一化最终法向量
     double normalMag = sqrt(dot(zeronormal, zeronormal));
     if (normalMag < 1e-10) return zeronormal.zero(); // 避免除以零
     zeronormal = {zeronormal.x / normalMag, zeronormal.y / normalMag, zeronormal.z / normalMag};
-
-    // 应用混合面积归一化
-    zeronormal = zeronormal * (0.5 / dualArea);
-
     return zeronormal;
 
     return {0, 0, 0}; // placeholder
@@ -718,6 +643,47 @@ double VertexPositionGeometry::totalAngleDefect() const {
 double VertexPositionGeometry::scalarMeanCurvature(Vertex v) const {
 
     // TODO
+    // 初始化法向量为零向量
+    double meanCurvate = 0.0;
+
+    // 获取顶点 v 周围的半边
+    std::vector<Halfedge> halfedges;
+    Halfedge startHe = v.halfedge(); // 获取顶点的第一个半边
+    Halfedge he = startHe;
+    do {
+        halfedges.push_back(he);
+        he = he.next().next().twin(); // 移动到下一个半边
+    } while (he != startHe); // 直到回到起点或遇到边界
+
+    // 如果没有有效半边，返回零向量
+    if (halfedges.empty()) return 0.0;
+
+    // 获取半边向量
+    std::vector<Vector3> vec;
+    for (Halfedge h : halfedges) {
+        Vertex vStart = h.vertex();
+        Vertex vEnd = h.next().vertex();
+        Vector3 startPos = inputVertexPositions[vStart];
+        Vector3 endPos = inputVertexPositions[vEnd];
+        Vector3 edgeVec = endPos - startPos; // 半边向量
+        vec.push_back(edgeVec);
+    }
+
+    // 计算每个半边向量的长度
+    std::vector<double> len(vec.size());
+    for (size_t i = 0; i < vec.size(); ++i) {
+        len[i] = sqrt(dot(vec[i], vec[i]));
+        if (len[i] < 1e-10) return 0.0; // 避免除以零
+    }
+
+    for (size_t i = 0; i < vec.size(); ++i) {
+        auto diAngle = dihedralAngle(halfedges[i]);
+        meanCurvate += diAngle * len[i];
+    }
+
+    meanCurvate /= 2;
+    return meanCurvate;
+
     return 0; // placeholder
 }
 
@@ -730,67 +696,65 @@ double VertexPositionGeometry::scalarMeanCurvature(Vertex v) const {
 double VertexPositionGeometry::circumcentricDualArea(Vertex v) const {
 
     // TODO
-    // 初始化对偶面积
-    double area = 0.0;
+    {
+        double area = 0.0;
 
-    // 遍历顶点 v 周围的所有面（三角形）
-    for (Face f : v.adjacentFaces()) {
-        // 获取三角形的三个顶点
-        std::vector<Vertex> vertices;
-        for (Vertex vert : f.adjacentVertices()) {
-            vertices.push_back(vert);
+        for (Face f : v.adjacentFaces()) {
+            // Skip non-triangle faces
+            if (f.degree() != 3) continue;
+
+            Halfedge he = f.halfedge();
+            Halfedge h1 = he;
+            Halfedge h2 = he.next();
+            Halfedge h3 = h2.next();
+
+            // Identify the halfedge starting at vertex v
+            if (h1.vertex() != v && h2.vertex() != v && h3.vertex() != v) continue;
+
+            // Find the halfedge starting at v
+            Halfedge hV = (h1.vertex() == v) ? h1 : (h2.vertex() == v) ? h2 : h3;
+
+            // Get vertices: v, vNext, vPrev
+            Vertex vA = hV.tailVertex();     // v
+            Vertex vB = hV.next().tailVertex();    // vNext
+            Vertex vC = hV.next().next().tailVertex(); // vPrev
+
+            Vector3 pA = inputVertexPositions[vA];
+            Vector3 pB = inputVertexPositions[vB];
+            Vector3 pC = inputVertexPositions[vC];
+
+            // Edge vectors and lengths
+            Vector3 vecAB = pB - pA;
+            Vector3 vecAC = pC - pA;
+            double lenAB = norm(vecAB);
+            double lenAC = norm(vecAC);
+
+            // Skip degenerate edges
+            if (lenAB < 1e-10 || lenAC < 1e-10) continue;
+
+            // Compute cotangents for angles at vB and vC
+            Vector3 vecBA = pA - pB;
+            Vector3 vecBC = pC - pB;
+            double cotB = dot(vecBA, vecBC) / norm(cross(vecBA, vecBC));
+
+            Vector3 vecCA = pA - pC;
+            Vector3 vecCB = pB - pC;
+            double cotC = dot(vecCA, vecCB) / norm(cross(vecCA, vecCB));
+
+            // Handle degenerate angles (avoid division by zero)
+            if (std::isnan(cotB)) cotB = 0.0;
+            if (std::isnan(cotC)) cotC = 0.0;
+
+            // Add Voronoi area contribution from this face
+            area += (lenAB * lenAB * cotC + lenAC * lenAC * cotB);
         }
+        area /= 8.0;
 
-        // 确保是三角形（有 3 个顶点）
-        if (vertices.size() != 3) continue;
-
-        // 确定当前顶点 v 在三角形中的位置
-        int vIndex = -1;
-        for (int i = 0; i < 3; ++i) {
-            if (vertices[i] == v) {
-                vIndex = i;
-                break;
-            }
-        }
-        if (vIndex == -1) continue;
-
-        // 获取三个顶点的坐标
-        Vector3 A = inputVertexPositions[vertices[0]];
-        Vector3 B = inputVertexPositions[vertices[1]];
-        Vector3 C = inputVertexPositions[vertices[2]];
-
-        // 确定顶点 v 和相邻顶点
-        Vector3 vPos = inputVertexPositions[v];
-        Vector3 vPrev = (vIndex == 0) ? inputVertexPositions[vertices[2]] : inputVertexPositions[vertices[vIndex - 1]];
-        Vector3 vNext = (vIndex == 2) ? inputVertexPositions[vertices[0]] : inputVertexPositions[vertices[vIndex + 1]];
-
-        // 计算边向量和长度
-        Vector3 edgePrev = vPrev - vPos;
-        Vector3 edgeNext = vNext - vPos;
-        double lenPrev = sqrt(dot(edgePrev, edgePrev));
-        double lenNext = sqrt(dot(edgeNext, edgeNext));
-        if (lenPrev < 1e-10 || lenNext < 1e-10) continue;
-
-        // 归一化边向量
-        Vector3 edgePrevNorm = {edgePrev.x / lenPrev, edgePrev.y / lenPrev, edgePrev.z / lenPrev};
-        Vector3 edgeNextNorm = {edgeNext.x / lenNext, edgeNext.y / lenNext, edgeNext.z / lenNext};
-
-        // 计算内角的余切值
-        double cosTheta = dot(edgePrevNorm, edgeNextNorm);
-        cosTheta = std::max(-1.0, std::min(1.0, cosTheta)); // 限制范围
-        double sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-        double cotTheta = (sinTheta < 1e-10) ? 0.0 : cosTheta / sinTheta;
-
-        // 计算对偶面积贡献：(l1^2 + l2^2) * cot θ / 8
-        double contribution = (lenPrev * lenPrev + lenNext * lenNext) * cotTheta / 8.0;
-        area += contribution;
+        // Clamp negative areas to zero
+        return area;
     }
-
-    // 确保面积非负
-    if (area < 0) area = 0.0;
-    return area;
     return 0; // placeholder
-}
+} 
 
 /*
  * Computes the (pointwise) minimum and maximum principal curvature values at a vertex.
@@ -801,6 +765,13 @@ double VertexPositionGeometry::circumcentricDualArea(Vertex v) const {
 std::pair<double, double> VertexPositionGeometry::principalCurvatures(Vertex v) const {
 
     // TODO
+    double H = vertexMeanCurvature(v);
+    double K = vertexGaussianCurvature(v);
+    double area = barycentricDualArea(v);
+    double temp = std::sqrt(std::abs(H / area * H / area - K / area));
+    double k_max = H / area + temp;
+    double k_min = H / area - temp;
+    return  std::make_pair(k_min, k_max);
     return std::make_pair(0, 0); // placeholder
 }
 
@@ -815,19 +786,93 @@ std::pair<double, double> VertexPositionGeometry::principalCurvatures(Vertex v) 
 SparseMatrix<double> VertexPositionGeometry::laplaceMatrix() const {
 
     // TODO
+    // 获取网格对象和顶点数量
+    int nVertices = mesh.nVertices();
+
+    // 使用三元组列表高效构建稀疏矩阵
+    std::vector<Eigen::Triplet<double>> triplets;
+
+    // 顶点度数向量（记录每个顶点相邻边的权重和）
+    Eigen::VectorXd vertexDegrees = Eigen::VectorXd::Zero(nVertices);
+
+    // 第一步：遍历所有边构建负半定拉普拉斯矩阵
+    for (Edge e : mesh.edges()) {
+        // 获取当前边的两个半边
+        Halfedge he = e.halfedge();
+        Halfedge twin = he.twin();
+
+        // 计算cotangent权重（取两个对角的平均值）
+        double weight = 0.5 * (halfedgeCotanWeight(he) + halfedgeCotanWeight(twin));
+
+        // 获取边两端的顶点索引
+        Vertex v1 = he.vertex();
+        Vertex v2 = twin.vertex();
+        size_t i = v1.getIndex();
+        size_t j = v2.getIndex();
+
+        // 添加非对角元素（负半定矩阵的非零元）
+        triplets.emplace_back(i, j, weight); // L_ij
+        triplets.emplace_back(j, i, weight); // L_ji
+
+        // 累加顶点度数（权重和）
+        vertexDegrees[i] += weight;
+        vertexDegrees[j] += weight;
+    }
+
+    // 第二步：处理对角元素并应用正定转换
+    for (Vertex v : mesh.vertices()) {
+        size_t idx = v.getIndex();
+        double degree = vertexDegrees[idx];
+
+        // 原始负半定矩阵的对角元素 = -degree
+        // 乘以-1后变为：+degree
+        // 添加小偏移量(1e-8)确保正定性
+        triplets.emplace_back(idx, idx, (-degree) + 1e-8);
+    }
+
+    // 第三步：构建稀疏矩阵
+    SparseMatrix<double> laplaceMat(nVertices, nVertices);
+    laplaceMat.setFromTriplets(triplets.begin(), triplets.end());
+
+    // 确保矩阵对称性（数值稳定性）
+    laplaceMat.makeCompressed();
+    return laplaceMat;
     return identityMatrix<double>(1); // placeholder
 }
 
 /*
- * Builds the sparse diagonal mass matrix containing the barycentric dual area of each vertex.
+ * 构建包含顶点重心对偶面积的稀疏对角质量矩阵
  *
- * Input:
- * Returns: Sparse mass matrix for the mesh.
+ * 重心对偶面积 = 顶点周围所有三角形面积之和的 1/3
+ *
+ * 返回: 网格的质量矩阵（对角矩阵）
  */
 SparseMatrix<double> VertexPositionGeometry::massMatrix() const {
+    // 获取网格对象和顶点数量
+    size_t nVertices = mesh.nVertices();
 
-    // TODO
-    return identityMatrix<double>(1); // placeholder
+    // 初始化存储顶点面积的向量（全零）
+    Eigen::VectorXd vertexAreas = Eigen::VectorXd::Zero(nVertices);
+
+    // 将三角形面积的1/3分配给每个顶点
+    for (Vertex v : mesh.vertices()) {
+        vertexAreas[v.getIndex()] = barycentricDualArea(v);
+    }
+
+    // 第二步：构建对角质量矩阵
+    std::vector<Eigen::Triplet<double>> triplets;
+    triplets.reserve(nVertices); // 预分配空间
+
+    for (size_t i = 0; i < nVertices; ++i) {
+        // 将对角元素设为顶点面积
+        triplets.emplace_back(i, i, vertexAreas[i]);
+    }
+
+    // 创建并填充稀疏矩阵
+    SparseMatrix<double> massMat(nVertices, nVertices);
+    massMat.setFromTriplets(triplets.begin(), triplets.end());
+
+    return massMat;
 }
 
 /*
@@ -841,6 +886,45 @@ SparseMatrix<std::complex<double>> VertexPositionGeometry::complexLaplaceMatrix(
 
     // TODO
     return identityMatrix<std::complex<double>>(1); // placeholder
+}
+
+/*
+ * 构建负半定拉普拉斯矩阵 (原始cotangent权重)
+ * 返回: 负半定拉普拉斯矩阵
+ */
+SparseMatrix<double> VertexPositionGeometry::laplaceMatrixNegativeSemidefinite() const {
+    size_t n = mesh.nVertices();
+    std::vector<Eigen::Triplet<double>> triplets;
+    Eigen::VectorXd diagonalSums = Eigen::VectorXd::Zero(n);
+
+    // 遍历所有边计算cotangent权重
+    for (Edge e : mesh.edges()) {
+        Halfedge he = e.halfedge();
+        double w = 0.5 * (halfedgeCotanWeight(he) + halfedgeCotanWeight(he.twin()));
+
+        Vertex v1 = he.vertex();
+        Vertex v2 = he.twin().vertex();
+        int i = v1.getIndex();
+        int j = v2.getIndex();
+
+        // 添加非对角元素 (正值)
+        triplets.emplace_back(i, j, w);
+        triplets.emplace_back(j, i, w);
+
+        // 累加对角元素 (负值)
+        diagonalSums[i] += w;
+        diagonalSums[j] += w;
+    }
+
+    // 添加对角元素 (负的权重和)
+    for (Vertex v : mesh.vertices()) {
+        int i = v.getIndex();
+        triplets.emplace_back(i, i, -diagonalSums[i]);
+    }
+
+    SparseMatrix<double> L(n, n);
+    L.setFromTriplets(triplets.begin(), triplets.end());
+    return L;
 }
 
 /*
