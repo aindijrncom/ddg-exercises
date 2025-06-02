@@ -69,6 +69,8 @@ VertexData<Vector3> mapToMeshData(VertexData<Vector2>& flattening) {
 
     VertexData<Vector3> flat = geometry->inputVertexPositions;
     for (Vertex v : mesh->vertices()) {
+        auto x = flattening[v][0];
+        auto y = flattening[v][1];
         flat[v] = Vector3{flattening[v][0], flattening[v][1], 0.0};
     }
     return flat;
@@ -132,6 +134,11 @@ void functionCallback() {
         if (DISPLAY_FLAT) {
             // Display SCP parameterization
             geometry->inputVertexPositions = SCP_MESH;
+            for (int i = 0; i < mesh->nVertices();i++) {
+                auto x = geometry->inputVertexPositions[i][0];
+                auto y = geometry->inputVertexPositions[i][1];
+                auto z = geometry->inputVertexPositions[i][2];
+            }
             geometry->normalize(CoM, true);
             polyscope::view::flyToHomeView();
             polyscope::view::style = polyscope::view::NavigateStyle::Planar;

@@ -875,6 +875,45 @@ SparseMatrix<double> VertexPositionGeometry::massMatrix() const {
     return massMat;
 }
 
+///*
+// * 构建负半定拉普拉斯矩阵 (原始cotangent权重)
+// * 返回: 负半定拉普拉斯矩阵
+// */
+// SparseMatrix<double> laplaceMatrixNegativeSemidefinite() const {
+//    size_t n = mesh.nVertices();
+//    std::vector<Eigen::Triplet<double>> triplets;
+//    Eigen::VectorXd diagonalSums = Eigen::VectorXd::Zero(n);
+//
+//    // 遍历所有边计算cotangent权重
+//    for (Edge e : mesh.edges()) {
+//        Halfedge he = e.halfedge();
+//        double w = 0.5 * (halfedgeCotanWeight(he) + halfedgeCotanWeight(he.twin()));
+//
+//        Vertex v1 = he.vertex();
+//        Vertex v2 = he.twin().vertex();
+//        int i = v1.getIndex();
+//        int j = v2.getIndex();
+//
+//        // 添加非对角元素 (正值)
+//        triplets.emplace_back(i, j, w);
+//        triplets.emplace_back(j, i, w);
+//
+//        // 累加对角元素 (负值)
+//        diagonalSums[i] += w;
+//        diagonalSums[j] += w;
+//    }
+//
+//    // 添加对角元素 (负的权重和)
+//    for (Vertex v : mesh.vertices()) {
+//        int i = v.getIndex();
+//        triplets.emplace_back(i, i, -diagonalSums[i]);
+//    }
+//
+//    SparseMatrix<double> L(n, n);
+//    L.setFromTriplets(triplets.begin(), triplets.end());
+//    return L;
+//}
+
 /*
  * Builds the sparse complex POSITIVE DEFINITE Laplace matrix. Do this by building the negative semidefinite Laplace
  * matrix, multiplying by -1, and shifting the diagonal elements by a small constant (e.g. 1e-8).
@@ -884,48 +923,62 @@ SparseMatrix<double> VertexPositionGeometry::massMatrix() const {
  */
 SparseMatrix<std::complex<double>> VertexPositionGeometry::complexLaplaceMatrix() const {
 
+     
     // TODO
+    // 1. 获取负半定拉普拉斯矩阵（实数）
+    SparseMatrix<double> L_neg;
+    {
+        size_t n = mesh.nVertices();
+        std::vector<Eigen::Triplet<double>> triplets;
+        Eigen::VectorXd diagonalSums = Eigen::VectorXd::Zero(n);
+
+        // 遍历所有边计算cotangent权重
+        for (Edge e : mesh.edges()) {
+            Halfedge he = e.halfedge();
+            double w = 0.5 * (halfedgeCotanWeight(he) + halfedgeCotanWeight(he.twin()));
+
+            Vertex v1 = he.vertex();
+            Vertex v2 = he.twin().vertex();
+            int i = v1.getIndex();
+            int j = v2.getIndex();
+
+            // 添加非对角元素 (正值)
+            triplets.emplace_back(i, j, w);
+            triplets.emplace_back(j, i, w);
+
+            // 累加对角元素 (负值)
+            diagonalSums[i] += w;
+            diagonalSums[j] += w;
+        }
+
+        // 添加对角元素 (负的权重和)
+        for (Vertex v : mesh.vertices()) {
+            int i = v.getIndex();
+            triplets.emplace_back(i, i, -diagonalSums[i]);
+        }
+
+        SparseMatrix<double> L(n, n);
+        L.setFromTriplets(triplets.begin(), triplets.end());
+        L_neg = L;
+    }
+
+    // 2. 构建单位矩阵用于对角偏移
+    size_t n = L_neg.rows();
+    SparseMatrix<double> I(n, n);
+    I.setIdentity();
+    I = 1e-8 * I; // 小常数对角偏移
+
+    // 3. 计算正定矩阵: L_pos = -L_neg + εI
+    SparseMatrix<double> L_pos = -L_neg + I;
+
+    // 4. 将实数矩阵转换为复数矩阵（虚部为0）
+    SparseMatrix<std::complex<double>> L_complex = L_pos.cast<std::complex<double>>();
+
+    return L_complex;
+
     return identityMatrix<std::complex<double>>(1); // placeholder
 }
 
-/*
- * 构建负半定拉普拉斯矩阵 (原始cotangent权重)
- * 返回: 负半定拉普拉斯矩阵
- */
-SparseMatrix<double> VertexPositionGeometry::laplaceMatrixNegativeSemidefinite() const {
-    size_t n = mesh.nVertices();
-    std::vector<Eigen::Triplet<double>> triplets;
-    Eigen::VectorXd diagonalSums = Eigen::VectorXd::Zero(n);
-
-    // 遍历所有边计算cotangent权重
-    for (Edge e : mesh.edges()) {
-        Halfedge he = e.halfedge();
-        double w = 0.5 * (halfedgeCotanWeight(he) + halfedgeCotanWeight(he.twin()));
-
-        Vertex v1 = he.vertex();
-        Vertex v2 = he.twin().vertex();
-        int i = v1.getIndex();
-        int j = v2.getIndex();
-
-        // 添加非对角元素 (正值)
-        triplets.emplace_back(i, j, w);
-        triplets.emplace_back(j, i, w);
-
-        // 累加对角元素 (负值)
-        diagonalSums[i] += w;
-        diagonalSums[j] += w;
-    }
-
-    // 添加对角元素 (负的权重和)
-    for (Vertex v : mesh.vertices()) {
-        int i = v.getIndex();
-        triplets.emplace_back(i, i, -diagonalSums[i]);
-    }
-
-    SparseMatrix<double> L(n, n);
-    L.setFromTriplets(triplets.begin(), triplets.end());
-    return L;
-}
 
 /*
  * Compute the center of mass of a mesh.

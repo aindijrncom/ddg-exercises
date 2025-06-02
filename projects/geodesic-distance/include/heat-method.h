@@ -12,12 +12,14 @@ class HeatMethod {
     SparseMatrix<double> A; // Laplace matrix
     SparseMatrix<double> F; // flow matrix
 
+
     HeatMethod() {}
     HeatMethod(ManifoldSurfaceMesh* surfaceMesh, VertexPositionGeometry* geo);
     FaceData<Vector3> computeVectorField(const Vector<double>& u) const;
     Vector<double> computeDivergence(const FaceData<Vector3>& X) const;
     Vector<double> compute(const Vector<double>& delta) const;
-
+    Vector<double> integratedDivergence(const FaceData<Vector3>& X) const;
+    Vector3 faceGradient(const Vector<double>& u, Face f) const;
   private:
     /*
      * Shift φ such that its minimum value is zero.
