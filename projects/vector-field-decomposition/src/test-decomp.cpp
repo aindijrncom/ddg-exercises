@@ -134,18 +134,21 @@ class HarmonicBasesTest : public HodgeDecompositionTest {
 TEST_F(HodgeDecompositionTest, computeExactComponent) {
 
     Vector<double> dAlpha = HD.computeExactComponent(this->omega);
+    std::cout << (dAlpha - dAlpha_soln).norm();
     EXPECT_TRUE((dAlpha - dAlpha_soln).norm() < 1e-5);
 }
 
 TEST_F(HodgeDecompositionTest, computeCoExactComponent) {
 
     Vector<double> deltaBeta = HD.computeCoExactComponent(this->omega);
+    std::cout << (deltaBeta - deltaBeta_soln).norm();
     EXPECT_TRUE((deltaBeta - deltaBeta_soln).norm() < 1e-6);
 }
 
 TEST_F(HodgeDecompositionTest, computeHarmonicComponent) {
 
     Vector<double> gamma = HD.computeHarmonicComponent(this->omega, this->dAlpha_soln, this->deltaBeta_soln);
+    std::cout << (gamma - gamma_soln).norm();
     EXPECT_TRUE((gamma - gamma_soln).norm() < 1e-6);
 }
 
@@ -170,9 +173,11 @@ TEST_F(HarmonicBasesTest, compute) {
     for (int i = 0; i < N; i++) {
         Vector<double> dGamma = HD.d1 * bases[i];
         Vector<double> deltaGamma = HD.d0T * HD.hodge1 * bases[i];
+        std::cout << (dGamma).norm()<<std::endl;
         if (dGamma.norm() > 1e-4) {
             closed_success = false;
         }
+        std::cout << (deltaGamma).norm()<<std::endl;
         if (deltaGamma.norm() > 1e-4) {
             exact_success = false;
         }

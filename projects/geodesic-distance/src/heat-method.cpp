@@ -59,7 +59,6 @@ HeatMethod::HeatMethod(ManifoldSurfaceMesh* surfaceMesh, VertexPositionGeometry*
 
         L.setFromTriplets(triplets.begin(), triplets.end());
         L.makeCompressed();
-        this->F = L;
     }
     //SparseMatrix<double> L = geometry->laplaceMatrix();
 
@@ -67,7 +66,7 @@ HeatMethod::HeatMethod(ManifoldSurfaceMesh* surfaceMesh, VertexPositionGeometry*
     this->A = L;
 
     // Build F =  M - t * L for the heat equation
-    L = geometry->laplaceMatrix();
+    // L = geometry->laplaceMatrix();
     this->F = M - t * L;
 
     // Note: core/geometry.cpp has meanEdgeLength() function
@@ -242,11 +241,11 @@ Vector<double> HeatMethod::compute(const Vector<double>& delta) const {
     Vector<double> div_X = computeDivergence(X);
 
     // Step 4: Solve Poisson equation L φ = div_X
-    SparseMatrix<double> L = geometry->laplaceMatrix();
-    int r = L.rows();
-    int c = L.cols();
+    SparseMatrix<double> AAA = A;
+    int r = AAA.rows();
+    int c = AAA.cols();
 
-    Vector<double> phi = solveSquare(L, div_X);
+    Vector<double> phi = solveSquare(AAA, div_X);
 
     // Step 5: Shift φ so that the smallest distance is zero
     //double min_phi = phi.minCoeff();

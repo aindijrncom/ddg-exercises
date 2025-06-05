@@ -138,7 +138,12 @@ void buildTreeCotreeGraph() {
     if (treeCotree.vertexParent.size() > 0) {
         for (Vertex v : mesh->vertices()) {
             vertPrimal.push_back(geometry->inputVertexPositions[v]);
-            indPrimal.push_back({v.getIndex(), treeCotree.vertexParent[v].getIndex()});
+            auto parent = treeCotree.vertexParent[v];
+            if (parent.getMesh() == nullptr) {
+                indPrimal.push_back({v.getIndex(), v.getIndex()});
+            } else {
+                indPrimal.push_back({v.getIndex(), treeCotree.vertexParent[v].getIndex()});    
+            }
         }
     }
 
@@ -148,7 +153,12 @@ void buildTreeCotreeGraph() {
     if (treeCotree.faceParent.size() > 0) {
         for (Face f : mesh->faces()) {
             vertDual.push_back(centroid(f));
-            indDual.push_back({f.getIndex(), treeCotree.faceParent[f].getIndex()});
+            auto parent = treeCotree.faceParent[f];
+            if (parent.getMesh() == nullptr) {
+                indDual.push_back({f.getIndex(), f.getIndex()});
+            } else {
+                indDual.push_back({f.getIndex(), treeCotree.faceParent[f].getIndex()});
+            }
         }
     }
 
@@ -411,7 +421,7 @@ int main(int argc, char** argv) {
     }
 
     // If a mesh name was not given, use default mesh.
-    std::string filepath = "../../../input/bunny.obj";
+    std::string filepath = "../../../input/torus.obj";
     if (inputFilename) {
         filepath = args::get(inputFilename);
     }

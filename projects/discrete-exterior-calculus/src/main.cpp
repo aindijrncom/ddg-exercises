@@ -798,7 +798,7 @@ int main(int argc, char** argv) {
     }
 
     // If a mesh name was not given, use default mesh.
-    std::string filepath = "../../../input/hexagon.obj";
+    std::string filepath = "../../../input/bunny.obj"; // hexagon
     if (inputFilename) {
         filepath = args::get(inputFilename);
     }
@@ -806,10 +806,10 @@ int main(int argc, char** argv) {
     // Load mesh
     std::tie(mesh, geometry) = readManifoldSurfaceMesh(filepath);
 
-    if (!isPlanar()) {
+   /* if (!isPlanar()) {
         std::cerr << "Please load a planar mesh with zero Z component" << std::endl;
         return EXIT_FAILURE;
-    }
+    }*/
 
     // Initialize polyscope
     polyscope::view::style = polyscope::view::NavigateStyle::Planar;

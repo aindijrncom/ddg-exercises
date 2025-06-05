@@ -15,8 +15,9 @@ class TreeCotree {
     VertexPositionGeometry* geometry;
 
     std::map<Vertex, Vertex> vertexParent;
+    std::map<int, int> vertexParentIndex;
     std::map<Face, Face> faceParent;
-
+    std::map<int, int> faceParentIndex;
     std::vector<std::vector<Halfedge>> generators;
 
     TreeCotree() {}
@@ -31,6 +32,8 @@ class TreeCotree {
     bool inDualSpanningCotree(Halfedge he);
 
     Halfedge sharedHalfedge(Face f, Face g) const;
+
+    std::vector<Halfedge> findPathInPrimalTree(Vertex v1, Vertex v2);
 
     void buildGenerators();
 };
